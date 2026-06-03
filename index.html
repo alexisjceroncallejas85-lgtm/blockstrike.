@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Block Strike Sound Master</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none;font-family:sans-serif;}
+body{background:#0f0f1a;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
+#m-scr{display:flex;flex-direction:column;align-items:center;gap:30px;}
+h1{font-size:36px;color:#ff007f;text-shadow:0 0 15px rgba(255,0,127,.5);}
+.btn{background:linear-gradient(135deg,#00ffcc,#00b3ff);border:none;border-radius:50px;padding:15px 50px;color:#0f0f1a;font-size:18px;font-weight:bold;cursor:pointer;box-shadow:0 0 20px rgba(0,255,204,.4);}
+#g-scr{display:none;flex-direction:column;align-items:center;gap:15px;}
+.hud{display:flex;justify-content:space-between;width:200px;font-size:14px;color:#00ffcc;}
+.cnv-box{display:flex;gap:10px;align-items:flex-start;}
+canvas{background:#000;border:2px solid #333;border-radius:8px;}
+.ctrls{display:flex;gap:8px;width:200px;margin-top:10px;}
+.b-pad{flex:1;padding:12px;background:#1e1e30;border:1px solid #3a3a5c;color:#fff;font-size:18px;border-radius:8px;cursor:pointer;}
+.b-pad:active{background:#00ffcc;color:#000;}
+</style>
+</head>
+<body>
+
+<div id="m-scr">
+    <h1>BLOCK STRIKE</h1>
+    <button class="btn" onclick="stGame()">JUGAR</button>
+</div>
+
+<div id="g-scr">
+    <div class="hud"><div>PTS:<span id="sc">0</span></div><div>LVL:<span id="lv">1</span></div><div style="color:#ff007f;">VIDAS:<span id="vd">❤❤❤</span></div></div>
+    <div class="cnv-box">
+        <canvas id="stage" width="200" height="360"></canvas>
+        <div style="display:flex;flex-direction:column;gap:15px;align-items:center;">
+            <div style="font-size:10px;color:#aaa;">SIG:</div>
+            <canvas id="next" width="60" height="60"></canvas>
+            <button onclick="exGame()" style="background:none;border:1px solid #ff007f;color:#ff007f;font-size:10px;padding:5px;border-radius:4px;cursor:pointer;">SALIR</button>
+        </div>
+    </div>
+    <div class="ctrls"><button class="b-pad" onclick="mv(-1)">◀</button><button class="b-pad" onclick="rt()">↻</button><button class="b-pad" onclick="mv(1)">▶</button></div>
+    <div class="ctrls" style="margin-top:0;"><button class="b-pad" onclick="dpWithSound()">▼ BAJAR</button></div>
+</div>
+
+<script>
+const cv=document.getElementById('stage'),cx=cv.getContext('2d');cx.scale(20,20);
+const nCv=document.getElementById('next'),nCx=nCv.getContext('2d');nCx.scale(15,15);
+let tm=null,sc=0,lv=1,vd=3,lines=0,bd=[],sp=800;
+const cols=10,rows=18,clrs=[null,'#ff0055','#00ffcc','#ffcc00','#9900ff','#ff6600','#0066ff','#00ff00'];
+
+let audioCtx = null;
+let musicInterval = null;
+const melody = [261.63, 293.66, 329.63, 349.23, 392.00, 349.23, 329.63, 293.66];
+let noteIndex = 0;
+
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSound(freq, duration, type = 'square', vol = 0.05) {
+    if (!audioCtx) return;
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + duration);
+}
+
+function playMoveSound() { playSound(500, 0.05, 'square', 0.04); }
+function playDropSound() { playSound(300, 0.04, 'square', 0.04); }
+
+function playLineSound() {
+    if (!audioCtx) return;
+    playSound(600, 0.1, 'sine', 0.08);
+    setTimeout(() => { playSound(900, 0.15, 'sine', 0.08); }, 70);
+}
+
+function playLevelUpSound() {
+    if (!audioCtx) return;
+    const notes = [440, 554.37, 659.25, 880];
+    notes.forEach((freq, index) => {
+        setTimeout(() => { playSound(freq, 0.15, 'triangle', 0.08); }, index * 100);
+    });
+}
+
+function startMusic() {
+    if (musicInterval) clearInterval(musicInterval);
+    musicInterval = setInterval(() => {
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(melody[noteIndex], audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+        noteIndex = (noteIndex + 1) % melody.length;
+    }, 400);
+}
+
+const rawPieces = [
+    "0,0,0,0;1,1,1,1;0,0,0,0;0,0,0,0",
+    "2,0,0;2,2,2;0,0,0",
+    "0,0,3;3,3,3;0,0,0",
+    "4,4;4,4",
+    "0,5,5;5,5,0;0,0,0",
+    "0,6,0;6,6,6;0,0,0",
+    "7,7,0;0,7,7;0,0,0"
+];
+const pcs = rawPieces.map(pStr => pStr.split(';').map(row => row.split(',').map(Number)));
+
+let pc={m:[],x:0,y:0},nxt=[];
+
+function cBd() { return Array.from({length:rows},()=>Array(cols).fill(0)); }
+
+function stGame(){initAudio();document.getElementById('m-scr').style.display='none';document.getElementById('g-scr').style.display='flex';sc=0;lv=1;vd=3;lines=0;sp=800;uHud();bd=cBd();nxt=pcs[Math.floor(Math.random()*pcs.length)];spPc();rTm();dr();startMusic();}
+function uHud(){document.getElementById('sc').innerText=sc;document.getElementById('lv').innerText=lv;document.getElementById('vd').innerText=vd>0?"❤".repeat(vd):"☠";}
+function rTm(){if(tm)clearInterval(tm);tm=setInterval(()=>{dp();dr();},sp);}
+function spPc(){pc.m=nxt;nxt=pcs[Math.floor(Math.random()*pcs.length)];pc.x=Math.floor(cols/2)-Math.floor(pc.m.length/2);pc.y=0;if(chCh()){vd--;uHud();if(vd<=0){alert("Fin. Puntos: "+sc);exGame();}else{bd=cBd();}}drNxt();}
+function chCh(){for(let r=0;r<pc.m.length;r++){for(let c=0;c<pc.m[r].length;c++){if(pc.m[r][c] !== 0){let nX=c+pc.x,nY=r+pc.y;if(nX<0||nX>=cols||nY>=rows)return true;if(nY>=0&&bd[nY][nX]!==0)return true;}}}return false;}
+function mg(){pc.m.forEach((row,r)=>{row.forEach((v,c)=>{if(v!==0)bd[r+pc.y][c+pc.x]=v;});});}
+function rt(){const n=pc.m.length;let r=Array.from({length:n},()=>Array(n).fill(0));for(let i=0;i<n;i++){for(let j=0;j<n;j++){if(pc.m[i])r[j][n-1-i]=pc.m[i][j];}}const o=pc.m;pc.m=r;if(chCh())pc.m=o;playMoveSound();}
+function mv(d){pc.x+=d;if(chCh())pc.x-=d;playMoveSound();}
+function dp(){pc.y++;if(chCh()){pc.y--;mg();chLn();spPc();}}
+function dpWithSound() { dp(); playDropSound(); dr(); }
+
+function chLn(){let l=0;for(let r=rows-1;r>=0;r--){if(bd[r].every(v=>v!==0)){bd.splice(r,1);bd.unshift(new Array(cols).fill(0));l++;r++;}}if(l>0){sc+=l*100*lv;lines+=l;playLineSound();let nL=Math.floor(lines/5)+1;if(nL>lv){lv=nL;sp=Math.max(150,800-(lv*70));rTm();setTimeout(playLevelUpSound, 300);}uHud();}}
+
+function dr(){
+    cx.fillStyle='#0f0f1a';cx.fillRect(0,0,cv.width,cv.height);
+    bd.forEach((row,r)=>{row.forEach((v,c)=>{if(v!==0){cx.fillStyle=clrs[v];cx.fillRect(c,r,.95,.95);}});});
+    pc.m.forEach((row,r)=>{row.forEach((v,c)=>{if(v!==0){cx.fillStyle=clrs[v];cx.fillRect(c+pc.x,r+pc.y,.95,.95);}});});
+}
+function drNxt(){
+    nCx.fillStyle='#0f0f1a';nCx.fillRect(0,0,nCv.width,nCv.height);
+    const oX=(4-nxt.length)/2,oY=(4-nxt.length)/2;
+    nxt.forEach((row,r)=>{row.forEach((v,c)=>{if(v!==0){nCx.fillStyle=clrs[v];nCx.fillRect(c+oX,r+oY,.9,.9);}});});
+}
+function exGame(){clearInterval(tm);if(musicInterval)clearInterval(musicInterval);document.getElementById('g-scr').style.display='none';document.getElementById('m-scr').style.display='flex';}
+document.addEventListener('keydown',e=>{if(e.keyCode===37)mv(-1);if(e.keyCode===39)mv(1);if(e.keyCode===40)dpWithSound();if(e.keyCode===38)rt();dr();});
+</script>
+</body>
+</html>
